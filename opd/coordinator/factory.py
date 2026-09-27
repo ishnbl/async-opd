@@ -101,11 +101,10 @@ def create_coordinator(config, *, opd_config=None, **kwargs) -> CoordinatorBase:
                 "OPSD mode does not yet support fully_async scheduling. "
                 "Use step-off mode (default)."
             )
-        if oc.pipeline.n_step_off.step_off > 0:
+        if oc.pipeline.n_step_off.step_off > 1:
             raise ValueError(
-                f"OPSD mode requires step_off=0 (got {oc.pipeline.n_step_off.step_off}). "
-                f"Scoring and generation share the same rollout worker, "
-                f"so step_off>0 causes queue serialization delays."
+                "OPSD classic scheduling currently supports step_off=0 or 1 "
+                f"(got {oc.pipeline.n_step_off.step_off})."
             )
         return StepOffCoordinator(config_placeholder, mode_cls=mode_cls,
                                   opd_config=oc, **kwargs)

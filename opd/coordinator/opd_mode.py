@@ -796,7 +796,7 @@ class OPDMode:
 # ===================================================================== #
 
 class OPSDMode(OPDMode):
-    """On-Policy Self-Distillation mode.
+    """Self-distillation mode with rollout-adjacent base-model scoring.
 
     Overrides OPDMode to:
     - Include solution_key in dataset loading
@@ -871,28 +871,37 @@ class OPSDMode(OPDMode):
 
     def async_generate(self, batch_dict):
         """Submit batch, stashing solutions for later scoring."""
-        if not batch_dict.get("eval", False):
+        is_eval = batch_dict.get("eval", False) or "eval_n_samples" in batch_dict
+        if not is_eval:
             sols = batch_dict.pop("solutions", None)
             problems = batch_dict.pop("problem_texts", None)
             self._solution_queue.append((sols, problems))
         else:
             batch_dict.pop("solutions", None)
             batch_dict.pop("problem_texts", None)
+            self._solution_queue.append(None)
         self.rollout_proxy.submit_generate(batch_dict)
 
     def wait_generate(self):
-        """Collect generation result, re-injecting buffered generates first."""
+        """Collect and score a rollout before exposing it to the scheduler."""
         self._reinject_buffered_generates()
-        return self.rollout_proxy.collect_generate()
+        gen_output = self.rollout_proxy.collect_generate()
+        solution_info = self._solution_queue.popleft()
+        if solution_info is None:
+            return gen_output
+        solutions, problem_texts = solution_info
+        gen_output["_opsd_teacher_output"] = self._async_self_score(
+            gen_output, solutions, problem_texts).get()
+        return gen_output
 
     # ------------------------------------------------------------------ #
     #  Teacher scoring — self-score via rollout                           #
     # ------------------------------------------------------------------ #
 
     def async_teacher(self, gen_output, batch=None):
-        """OPSD teacher path: score via rollout instead of ZMQ teacher."""
-        solutions, problem_texts = self._solution_queue.popleft()
-        return self._async_self_score(gen_output, solutions, problem_texts)
+        """Return the base-model scores recorded beside this rollout."""
+        scored = gen_output.pop("_opsd_teacher_output")
+        return SimpleNamespace(get=lambda: scored)
 
     # ------------------------------------------------------------------ #
     #  Lifecycle queries                                                  #
@@ -1052,11 +1061,13 @@ class OPSDMode(OPDMode):
                 prompt_start = valid_positions[0].item()
                 place_start = max(prompt_start + s_plen - 1, 0)
 
-                n_resp = min(resp_logps.size(0), seq_len - place_start)
+                # Teacher logprobs predict response token j from position j-1,
+                # while the trainer's response_mask marks token j itself.
+                n_resp = min(resp_logps.size(0), seq_len - place_start - 1)
                 if n_resp > 0:
                     p_logps[i, place_start:place_start + n_resp] = resp_logps[:n_resp]
                     p_idx[i, place_start:place_start + n_resp] = resp_idx[:n_resp]
-                    valid_mask[i, place_start:place_start + n_resp] = True
+                    valid_mask[i, place_start + 1:place_start + 1 + n_resp] = True
                     p_token_logps[i, place_start:place_start + n_resp] = resp_tok_logps[:n_resp]
 
             dt = time.time() - t_submit

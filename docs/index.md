@@ -6,6 +6,7 @@ Start here if you are evaluating or extending AsyncOPD as an external user.
 | --- | --- |
 | [Quickstart](quickstart.md) | Installation checks, no-GPU sanity commands, first GPU smoke run, and expected outputs. |
 | [Architecture guide](architecture.md) | Process topology, queues, ZMQ, NCCL weight sync, scheduling modes, and trust boundaries. |
+| [Codebase and Slurm guide](codebase-and-slurm.md) | Research-oriented code map, single-node Slurm setup, GPU placement, loss/importance-sampling extension points, and quantized rollout notes. |
 | [Configuration guide](configuration.md) | Public config sections, canonical vs compatibility keys, and examples for OPD, GRPO/DAPO, and SFT. |
 | [Training modes](training-modes.md) | How OPD, GRPO/DAPO, and SFT run, which config to start from, and what knobs to change first. |
 | [Loss/logit chunking](loss-chunking.md) | How `trainer.kl_chunk_size` reduces KL/logprob memory, how it relates to chunked CE, and how to tune it. |
