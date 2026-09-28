@@ -325,7 +325,9 @@ class ProcessLifecycleMixin:
         static = RolloutLaunchStatic(
             model_path=self.model_path,
             tp_size=tp,
-            max_response_length=self.max_response_length,
+            max_response_length=(
+                oc.rollout.train_max_tokens or self.max_response_length
+            ),
             temperature=rollout_cfg.get("temperature", 1.0),
             top_p=rollout_cfg.get("top_p", 0.99),
             top_k=rollout_cfg.get("top_k", -1),

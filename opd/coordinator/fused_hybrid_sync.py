@@ -82,6 +82,16 @@ class FusedHybridOPDMode(OPDMode):
         return opts
 
     def async_generate(self, batch_dict):
+        is_eval = batch_dict.get("eval", False) or "eval_n_samples" in batch_dict
+        if is_eval:
+            max_response_length = batch_dict.get(
+                "max_response_length", self._opd_config.data.max_response_length
+            )
+        else:
+            max_response_length = (
+                self._opd_config.rollout.train_max_tokens
+                or self._opd_config.data.max_response_length
+            )
         response_topk_k = (
             int(self._opd_config.algorithm.opd.rollout_student_topk_k)
             if self._uses_rollout_support_topk
@@ -90,7 +100,7 @@ class FusedHybridOPDMode(OPDMode):
         opts = {
             "return_logprobs": False,
             "response_topk_k": response_topk_k,
-            "max_response_length": self._opd_config.data.max_response_length,
+            "max_response_length": max_response_length,
         }
         # OPDMode computes these as properties; keep the fused command explicit.
         if self._opd_config.algorithm.opd.kl_loss_mode == "policy_gradient_kl":

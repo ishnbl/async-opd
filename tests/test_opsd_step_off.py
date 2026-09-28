@@ -102,6 +102,7 @@ def test_opsd_scores_and_records_teacher_logprobs_before_returning_rollout(monke
         _result_queues = [result_queue]
 
         def submit_generate(self, batch):
+            assert batch["max_response_length"] == 2
             events.append("generate")
             result_queue.put(generated)
 
@@ -121,6 +122,7 @@ def test_opsd_scores_and_records_teacher_logprobs_before_returning_rollout(monke
     config = OPDConfig(
         model=ModelConfig(path="student"),
         data=DataConfig(train_files="train.parquet", solution_key="solution"),
+        rollout=RolloutConfig(train_max_tokens=2),
         algorithm=AlgorithmConfig(mode="opsd"),
     )
     mode = OPSDMode(
@@ -139,6 +141,78 @@ def test_opsd_scores_and_records_teacher_logprobs_before_returning_rollout(monke
     assert events == ["generate", "score"]
     assert teacher["teacher_valid_mask"].tolist() == [[False, False, False, True, True]]
     assert teacher["teacher_token_logps"][0, 2:4].tolist() == torch.tensor([-0.2, -0.3]).tolist()
+
+
+def test_opsd_capped_queued_rollouts_keep_their_own_self_scores():
+    result_queue = Queue()
+    score_prompts = []
+
+    class Tokenizer:
+        def apply_chat_template(self, messages, **kwargs):
+            return messages[1]["content"]
+
+        def encode(self, text, add_special_tokens=False):
+            return [31 if "first solution" in text else 32]
+
+    class RolloutProxy:
+        n_workers = 1
+        _result_queues = [result_queue]
+
+        def submit_generate(self, batch):
+            assert batch["max_response_length"] == 2
+            first = int(batch["input_ids"][0, 0]) == 11
+            response = [21, 22] if first else [23]
+            result_queue.put({
+                "input_ids": torch.tensor([[11, 12, 21, 22] if first
+                                            else [13, 14, 23, 0]]),
+                "attention_mask": torch.tensor([[1, 1, 1, 1] if first
+                                                 else [1, 1, 1, 0]], dtype=torch.bool),
+                "responses": torch.tensor([[21, 22] if first else [23, 0]]),
+                "response_lengths": torch.tensor([len(response)]),
+                "prompt_lengths": torch.tensor([2]),
+                "full_token_lists": [([11, 12] if first else [13, 14]) + response],
+                "student_logprobs": torch.tensor([[-0.4, -0.5] if first else [-0.6, 0.0]]),
+            })
+
+        def collect_generate(self):
+            return result_queue.get()
+
+        def submit_command(self, command, request):
+            assert command == "score"
+            prompt = request["prompt_token_ids"][0]
+            score_prompts.append(prompt)
+            n = len(prompt) - 1
+            result_queue.put({
+                "_cmd": "score",
+                "teacher_topk_logprobs": [torch.full((n, 1), -0.2)],
+                "teacher_topk_indices": [torch.tensor(prompt[1:], dtype=torch.int32).unsqueeze(-1)],
+                "teacher_token_logps": [torch.full((n,), -0.2)],
+            })
+
+    config = OPDConfig(
+        model=ModelConfig(path="student"),
+        data=DataConfig(train_files="train.parquet", solution_key="solution"),
+        rollout=RolloutConfig(train_max_tokens=2),
+        algorithm=AlgorithmConfig(mode="opsd"),
+    )
+    mode = OPSDMode(rollout_proxy=RolloutProxy(), teacher_client=None,
+                    trainer_proxy=None, tracer=None, opd_config=config,
+                    tokenizer=Tokenizer())
+    mode.async_generate({"input_ids": torch.tensor([[11, 12]]),
+                         "solutions": ["first solution"], "problem_texts": ["first"]})
+    mode.async_generate({"input_ids": torch.tensor([[13, 14]]),
+                         "solutions": ["second solution"], "problem_texts": ["second"]})
+
+    first = mode.wait_generate()
+    first_teacher = mode.resolve_teacher(mode.async_teacher(first), {})
+    second = mode.wait_generate()
+    second_teacher = mode.resolve_teacher(mode.async_teacher(second), {})
+
+    assert score_prompts == [[31, 21, 22], [32, 23]]
+    assert first_teacher["teacher_valid_mask"].tolist() == [[False, False, True, True]]
+    assert second_teacher["teacher_valid_mask"].tolist() == [[False, False, True, False]]
+    torch.testing.assert_close(first["student_logprobs"], torch.tensor([[-0.4, -0.5]]))
+    torch.testing.assert_close(second["student_logprobs"], torch.tensor([[-0.6, 0.0]]))
 
 
 @pytest.mark.parametrize("eval_flags", [{"eval": True}, {"eval_n_samples": 2}])

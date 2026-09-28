@@ -238,6 +238,8 @@ def main():
                         help="Enable remote logging backends (clearml, wandb, aim)")
     parser.add_argument("--set", nargs="*", default=None,
                         help="Override config values: --set trainer.optim.lr=2e-5 eval.n_samples=1")
+    parser.add_argument("--train-rollout-max-tokens", type=int, default=None,
+                        help="Cap generated response tokens for OPD/OPSD training only")
     args = parser.parse_args()
 
     if args.eval_only and args.overwrite:
@@ -257,7 +259,10 @@ def main():
     from opd.utils.post_eval import collect_gpu_ids, run_allgpu_post_eval
     from opd.pipeline import create_coordinator
 
-    opd_config = OPDConfig.from_yaml(args.config, overrides=getattr(args, 'set', None))
+    overrides = list(args.set or [])
+    if args.train_rollout_max_tokens is not None:
+        overrides.append(f"rollout.train_max_tokens={args.train_rollout_max_tokens}")
+    opd_config = OPDConfig.from_yaml(args.config, overrides=overrides)
 
     # Build a simple dict for Logger provenance (replaces to_internal_dict)
     import dataclasses

@@ -94,7 +94,7 @@ data:
 | `enable_thinking` | Use tokenizer/model chat-template thinking behavior where supported. |
 | `teacher_enable_thinking` | Optional teacher-specific thinking override. |
 | `max_prompt_length` | Prompt token cap. |
-| `max_response_length` | Response token cap. |
+| `max_response_length` | Default rollout and evaluation response cap. Training OPD/OPSD can use a smaller `rollout.train_max_tokens`. |
 | `post_eval_datasets` | Additional post-eval datasets, including code benchmarks. |
 | `allow_pickle_teacher_logits` | Defaults false; opt-in only for trusted SFT KL datasets. |
 
@@ -201,6 +201,7 @@ rollout:
   temperature: 1.0
   top_p: 1.0
   top_k: -1
+  # train_max_tokens: 4096
   dtype: auto
   trust_remote_code: false
   vllm:
@@ -214,6 +215,7 @@ rollout:
 | `backend` | Rollout backend | Public examples use vLLM. |
 | `gpu_ids`, `n_gpus` | Rollout GPU placement | Prefer disjoint from trainer GPUs. |
 | `temperature`, `top_p`, `top_k` | Sampling controls | GRPO usually uses nonzero temperature. |
+| `train_max_tokens` | Optional hard cap for OPD/OPSD training responses | Must be between 1 and `data.max_response_length`; EOS may stop earlier. Evaluation uses `eval.max_response_length` or `data.max_response_length`. |
 | `quantization` | Optional rollout quantization | Advanced; verify model/backend support. |
 | `vllm.max_model_len` | Prompt + response context cap | Must fit `max_prompt_length + max_response_length` with margin. |
 | `vllm.max_num_seqs` | vLLM concurrency | Lower to reduce memory. |
@@ -417,6 +419,8 @@ python -m opd.cli.train --config configs/examples/opd_gsm8k_0.5b_4gpu.yaml \
 ```
 
 Use overrides for short smoke runs or local experiments. For long-running configs, copy an example and edit the YAML directly.
+
+For OPD or OPSD, `--train-rollout-max-tokens 4096` sets the training cap and takes precedence over `rollout.train_max_tokens` in YAML. Reaching the cap leaves an unfinished response prefix; the trainer scores only generated tokens and does not add an EOS token.
 
 ## Before a long run
 

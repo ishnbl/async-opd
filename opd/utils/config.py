@@ -343,6 +343,7 @@ class RolloutConfig:
     temperature: float = 1.0
     top_p: float = 1.0
     top_k: int = -1
+    train_max_tokens: int | None = None
     dtype: str = "auto"
     quantization: str | None = None
     trust_remote_code: bool = False
@@ -855,6 +856,18 @@ class OPDConfig:
         if not is_sft and self.rollout is None:
             # This is acceptable — rollout can be auto-derived
             pass
+        train_cap = self.rollout.train_max_tokens if self.rollout is not None else None
+        if train_cap is not None:
+            if mode not in {"opd", "opsd"}:
+                raise ValueError(
+                    "rollout.train_max_tokens requires algorithm.mode='opd' or 'opsd'"
+                )
+            if (type(train_cap) is not int or train_cap < 1
+                    or train_cap > self.data.max_response_length):
+                raise ValueError(
+                    "rollout.train_max_tokens must be an integer between 1 and "
+                    f"data.max_response_length ({self.data.max_response_length})"
+                )
 
         kl_mode = self.algorithm.opd.kl_loss_mode
         if kl_mode not in _VALID_KL_MODES:

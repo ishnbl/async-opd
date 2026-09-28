@@ -70,7 +70,7 @@ class EvaluationMixin:
         oc = getattr(self, 'opd_config', None)
         n_samples = oc.eval.n_samples
         eval_temperature = oc.eval.temperature
-        eval_max_resp = oc.eval.max_response_length
+        eval_max_resp = oc.eval.max_response_length or oc.data.max_response_length
         answer_pattern = oc.algorithm.reward.answer_pattern
 
         # Prepare validation output file
@@ -90,8 +90,7 @@ class EvaluationMixin:
                 for batch in self._val_data_iterator():
                     ground_truths = batch.pop("ground_truth")
                     batch["eval"] = True
-                    if eval_max_resp:
-                        batch["max_response_length"] = eval_max_resp
+                    batch["max_response_length"] = eval_max_resp
                     self._async_generate(batch)
                     gen_out = self._wait_generate()
 
@@ -128,8 +127,7 @@ class EvaluationMixin:
                     ground_truths = batch.pop("ground_truth")
                     batch["eval_n_samples"] = n_samples
                     batch["eval_temperature"] = eval_temperature
-                    if eval_max_resp:
-                        batch["max_response_length"] = eval_max_resp
+                    batch["max_response_length"] = eval_max_resp
                     self._async_generate(batch)
                     gen_out = self._wait_generate()
 
