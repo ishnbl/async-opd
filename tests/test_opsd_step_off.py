@@ -9,6 +9,7 @@ import torch
 from opd.coordinator.factory import create_coordinator
 from opd.coordinator.opd_mode import OPSDMode
 from opd.coordinator.step_off import StepOffCoordinator
+from opd.data.prompt import format_prompt
 from opd.loss.kl import KLConfig
 from opd.trainer.opd import OPDTrainer
 from opd.utils.config import (
@@ -69,6 +70,17 @@ def test_two_gpu_opsd_example_selects_policy_gradient_and_native_lora(
     if model_path == "Qwen/Qwen3-4B":
         assert config.data.enable_thinking is False
         assert config.data.teacher_enable_thinking is True
+
+    class CaptureTokenizer:
+        def apply_chat_template(self, messages, **kwargs):
+            return messages[0]["content"]
+
+    rendered = format_prompt("What is 6 * 7?", CaptureTokenizer(),
+                             config.data.prompt_template, config.data.enable_thinking)
+    assert rendered == (
+        "Problem: What is 6 * 7?\n\n"
+        "Please reason step by step, and put your final answer within \\boxed{}."
+    )
 
     baseline = OPDConfig.from_yaml(config_path, overrides=["pipeline.n_step_off.step_off=0"])
     assert baseline.pipeline.n_step_off.step_off == 0
