@@ -1801,7 +1801,11 @@ class BaseBackend(ABC):
         rank = getattr(self, 'dp_rank', self.rank)
         world_size = getattr(self, 'dp_world_size', self.world_size)
         mini_batch_size = self.mini_batch_size
-        max_response_length = self.max_response_length
+        responses = batch.get("responses")
+        max_response_length = (
+            responses.size(1) if isinstance(responses, torch.Tensor)
+            else self.max_response_length
+        )
 
         input_ids = batch["input_ids"]
         bs = input_ids.size(0)

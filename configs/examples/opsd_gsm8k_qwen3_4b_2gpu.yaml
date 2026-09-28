@@ -22,6 +22,7 @@ data:
 rollout:
   backend: vllm
   gpu_ids: '0'
+  # train_max_tokens: 128  # Optional prefix cap; evaluation keeps its own limit.
   temperature: 1.0
   vllm:
     tensor_parallel_size: 1

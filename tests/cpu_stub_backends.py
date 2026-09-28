@@ -241,6 +241,7 @@ def _batch_from_prompt_info(prompt_info: dict) -> dict:
         "input_ids": input_row.unsqueeze(0),
         "attention_mask": attention_row.unsqueeze(0),
         "return_logprobs": bool(prompt_info.get("return_logprobs", False)),
+        "max_response_length": prompt_info.get("max_response_length"),
     }
 
 
@@ -291,9 +292,10 @@ def cpu_stub_rollout_worker_main(config, cmd_queue, result_queue):
     _record("rollout", "started", worker_id=worker_id)
 
     def emit_batch(batch: dict, *, source: str) -> None:
+        batch_max_response_length = int(batch.get("max_response_length") or max_response_length)
         result = _build_rollout_result(
             batch,
-            max_response_length=max_response_length,
+            max_response_length=batch_max_response_length,
             worker_id=worker_id,
             weight_version=weight_version,
         )
@@ -307,14 +309,16 @@ def cpu_stub_rollout_worker_main(config, cmd_queue, result_queue):
         _record("rollout", "generate", worker_id=worker_id,
                 prompts=int(batch["input_ids"].size(0)),
                 samples=int(result["input_ids"].size(0)),
+                response_lengths=result["response_lengths"].tolist(),
                 return_logprobs=bool(batch.get("return_logprobs", False)),
                 source=source, weight_version=weight_version)
 
     def emit_prompt(prompt_info: dict) -> None:
         batch = _batch_from_prompt_info(prompt_info)
+        batch_max_response_length = int(batch.get("max_response_length") or max_response_length)
         result = _build_rollout_result(
             batch,
-            max_response_length=max_response_length,
+            max_response_length=batch_max_response_length,
             worker_id=worker_id,
             weight_version=weight_version,
         )
@@ -325,6 +329,7 @@ def cpu_stub_rollout_worker_main(config, cmd_queue, result_queue):
                 prompt_info=prompt_info))
         _record("rollout", "generate", worker_id=worker_id,
                 prompts=1, samples=int(result["input_ids"].size(0)),
+                response_lengths=result["response_lengths"].tolist(),
                 return_logprobs=bool(prompt_info.get("return_logprobs", False)),
                 source="prompt_queue", weight_version=weight_version)
 

@@ -315,6 +315,45 @@ def test_opd_cpu_stub_pipeline_hash_alignment_kl_zero(tmp_path, cpu_stub_runtime
     assert all(t["max_abs_logp_diff"] < 1e-8 for t in trains)
 
 
+def test_opd_train_rollout_cap_reaches_scoring_and_trainer(tmp_path, cpu_stub_runtime):
+    event_log, install_trainer = cpu_stub_runtime
+    install_trainer(cpu_stub_opd_trainer_main)
+    train_file = _write_prompt_data(tmp_path / "data" / "train.parquet", n_rows=2)
+    cfg = _base_train_config(train_file, total_steps=1, step_off=1)
+    cfg["rollout"]["train_max_tokens"] = 2
+    config_path = _write_yaml(tmp_path / "opd-cap.yaml", cfg)
+
+    _run_pipeline(config_path, tmp_path / "run-opd-cap")
+
+    events = _events(event_log)
+    generates = _filter(events, "rollout", "generate")
+    trains = _filter(events, "trainer", "train")
+    assert len(generates) == len(trains) == 1
+    assert generates[0]["response_lengths"] == [2, 2]
+    assert trains[0]["alignment_ok"] is True
+    assert trains[0]["n_tokens"] == 4
+
+
+def test_opd_train_cap_leaves_inline_evaluation_at_full_length(tmp_path, cpu_stub_runtime):
+    event_log, install_trainer = cpu_stub_runtime
+    install_trainer(cpu_stub_opd_trainer_main)
+    train_file = _write_prompt_data(tmp_path / "data" / "train.parquet", n_rows=2)
+    cfg = _base_train_config(train_file, total_steps=1, step_off=0)
+    cfg["data"]["val_files"] = str(train_file)
+    cfg["rollout"]["train_max_tokens"] = 2
+    cfg["eval"] = {"freq": 1, "mode": ["inline"], "before_train": False,
+                   "n_samples": 1}
+    config_path = _write_yaml(tmp_path / "opd-cap-eval.yaml", cfg)
+
+    _run_pipeline(config_path, tmp_path / "run-opd-cap-eval")
+
+    events = _events(event_log)
+    generate_lengths = [g["response_lengths"] for g in _filter(events, "rollout", "generate")]
+    assert generate_lengths == [[2, 2], [3, 3]]
+    trains = _filter(events, "trainer", "train")
+    assert len(trains) == 1 and trains[0]["n_tokens"] == 4
+
+
 def test_opd_cpu_stub_pipeline_two_rollout_workers_split_and_merge(tmp_path, cpu_stub_runtime):
     event_log, install_trainer = cpu_stub_runtime
     install_trainer(cpu_stub_opd_trainer_main)
@@ -489,6 +528,31 @@ def test_opd_cpu_stub_pipeline_fully_async_smoke(tmp_path, cpu_stub_runtime):
     assert len(_filter(events, "teacher", "score")) >= 1
     assert len(trains) == 1
     assert abs(trains[0]["kl_loss"]) < 1e-8
+    assert trains[0]["alignment_ok"] is True
+
+
+def test_opd_fully_async_training_uses_short_rollout_default(tmp_path, cpu_stub_runtime):
+    event_log, install_trainer = cpu_stub_runtime
+    install_trainer(cpu_stub_opd_trainer_main)
+    train_file = _write_prompt_data(tmp_path / "data" / "train.parquet", n_rows=2)
+    cfg = _base_train_config(train_file, total_steps=1, step_off=0)
+    cfg["rollout"]["train_max_tokens"] = 2
+    cfg["pipeline"] = {
+        "scheduling_mode": "fully_async",
+        "fully_async": {"staleness_threshold": 0},
+    }
+    config_path = _write_yaml(tmp_path / "opd-async-cap.yaml", cfg)
+
+    _run_pipeline(config_path, tmp_path / "run-opd-async-cap")
+
+    events = _events(event_log)
+    generates = _filter(events, "rollout", "generate")
+    trains = _filter(events, "trainer", "train")
+    assert generates and all(
+        all(length == 2 for length in g["response_lengths"]) for g in generates
+    )
+    assert len(trains) == 1
+    assert trains[0]["n_tokens"] == 4
     assert trains[0]["alignment_ok"] is True
 
 

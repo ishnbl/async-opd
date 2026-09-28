@@ -25,6 +25,7 @@ data:
   max_response_length: 16384
 rollout:
   gpu_ids: 1,2,3
+  # train_max_tokens: 4096  # Optional training prefix cap.
   n_gpus: 3
   temperature: 1.0
   vllm:

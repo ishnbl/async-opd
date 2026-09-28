@@ -218,7 +218,16 @@ class OPDMode:
 
     def async_generate(self, batch_dict):
         """Submit batch to rollout for generation (non-blocking)."""
+        self._set_train_rollout_limit(batch_dict)
         self.rollout_proxy.submit_generate(batch_dict)
+
+    def _set_train_rollout_limit(self, batch_dict):
+        if batch_dict.get("eval", False) or "eval_n_samples" in batch_dict:
+            return
+        rollout = getattr(self._opd_config, "rollout", None)
+        cap = getattr(rollout, "train_max_tokens", None)
+        if cap is not None:
+            batch_dict["max_response_length"] = cap
 
     def wait_generate(self):
         """Collect generation result. Returns gen_output dict."""
@@ -880,6 +889,7 @@ class OPSDMode(OPDMode):
             batch_dict.pop("solutions", None)
             batch_dict.pop("problem_texts", None)
             self._solution_queue.append(None)
+        self._set_train_rollout_limit(batch_dict)
         self.rollout_proxy.submit_generate(batch_dict)
 
     def wait_generate(self):
