@@ -1,0 +1,67 @@
+# Qwen3-4B OPSD on two GPUs. Compare zero staleness with
+# --set pipeline.n_step_off.step_off=0 using this same file.
+# GPU 0: LoRA student generation and fixed base-model teacher scoring.
+# GPU 1: LoRA student forward, backward, and optimizer updates.
+# Match the original OPSD Qwen3 setup: student non-thinking, teacher thinking.
+model:
+  path: Qwen/Qwen3-4B
+data:
+  train_files: hf:openai/gsm8k:main
+  val_files: hf:openai/gsm8k:main:test
+  prompt_key: question
+  solution_key: answer
+  answer_key: answer
+  prompt_template: |-
+    Problem: {problem}
+
+    Please reason step by step, and put your final answer within \boxed{{}}.
+  enable_thinking: false
+  teacher_enable_thinking: true
+  max_prompt_length: 512
+  max_response_length: 512
+rollout:
+  backend: vllm
+  gpu_ids: '0'
+  temperature: 1.0
+  vllm:
+    tensor_parallel_size: 1
+    max_model_len: 4096
+    max_num_seqs: 8
+    gpu_memory_utilization: 0.7
+trainer:
+  backend: fsdp
+  gpu_ids: '1'
+  batch_size: 4
+  mini_batch_size: 4
+  micro_batch_size: 1
+  total_steps: 200
+  total_epochs: 1
+  save_freq: -1
+  lora:
+    rank: 16
+    alpha: 32
+    dropout: 0.0
+    native_lora: true
+  optim:
+    lr: 1e-5
+    lr_decay_style: constant
+    weight_decay: 0.0
+algorithm:
+  mode: opsd
+  opd:
+    kl_loss_mode: policy_gradient_kl
+    use_importance_sampling: true
+    pg_clip_eps: 0.2
+    n_kl_logprobs: 1
+pipeline:
+  scheduling_mode: n_step_off
+  n_step_off:
+    implementation: classic
+    step_off: 1
+eval:
+  freq: 50
+  mode: [inline]
+  before_train: false
+  n_samples: 1
+weight_sync:
+  backend: nccl

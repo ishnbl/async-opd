@@ -652,6 +652,13 @@ class OPDTrainer(BaseTrainer):
 
         # Pass through extra KL-specific tensors
         raw_batch = prepared["batch"]
+        if (self.kl_config.mode == "policy_gradient_kl"
+                and self.kl_config.use_importance_sampling is not False
+                and raw_batch.get("student_logprobs") is None):
+            raise ValueError(
+                "policy_gradient_kl with importance sampling requires "
+                "student_logprobs from the rollout"
+            )
         if "teacher_token_logps" in raw_batch:
             flat["teacher_token_logps"] = raw_batch["teacher_token_logps"]
         if "student_logprobs" in raw_batch:
